@@ -36,6 +36,12 @@ queryTicketParams =\
     "leftTicketDTO.train_date={0}&leftTicketDTO.from_station={1}&leftTicketDTO.to_station={2}&purpose_codes=ADULT"
 
 
+class By12306query:
+
+    def __init__(self):
+        pass
+
+
 def create_network_request(method, url, **kwargs):
     """
     通用的网络请求函数
@@ -119,10 +125,10 @@ def query_ticket(method, url, stationCode, date=date.today(), **kwargs):
     return queryJson
 
 
-def parse_train_json(jsonData):
+def parse_train_json(jsonData, seatFilter=None):
     """
-    解析查询返回的json数据
     :param jsonData:
+    :param seatFilter:
     :return:
     """
     queryStationCode = jsonData["data"]["map"]
@@ -137,7 +143,11 @@ def parse_train_json(jsonData):
         trafficInformation.extend(code_turn_station(queryStationCode, trainNo[6:8]))  # 出发站，目的站，2
         trafficInformation.extend(half_turn_angle(trainNo[8:11]))  # 发车时间，到达时间，时长，3
         trafficInformation.extend(trainNo[11:12])  # 能否预定，1
-        trafficInformation.extend(half_turn_angle(trainNo[21:34]))  # 坐席信息，13
+        if seatFilter:
+            seatInformation = trainNo[21:34]
+            trafficInformation.extend(half_turn_angle([seatInformation[si] for si in seatFilter]))  # 坐席信息，自定义长度
+        else:
+            trafficInformation.extend(half_turn_angle(trainNo[21:34]))  # 坐席信息，13
         trafficInformations.append(trafficInformation)
     return queryStationCode, trafficInformations
 
@@ -173,29 +183,42 @@ def code_turn_station(queryStationCode, stationCodes):
     return stationName
 
 
-def print_query_train(queryStationCode, trafficInformations):
-    # printTitleFormat = "{0:　<7}{1:　<7}{2:　<7}{3:　<7}{4:　<7}{5:　<7}{6:　<3}{7:　<3}{8:　<3}{9:　<3}{10:　<3}" \
-    #                     "{11:　<3}{12:　<3}{13:　<3}{14:　<3}{15:　<3}{16:　<3}{17:　<3}{18:　<3}{19}"
-    # printTrainFormat = "{2:　<7}{3:　<7}{4:　<7}{5:　<7}{6:　<7}{7:　<7}{9:　<3}{10:　<3}{11:　<3}{12:　<3}{13:　<3}" \
-    #                    "{14:　<3}{15:　<3}{16:　<3}{17:　<3}{18:　<3}{19:　<3}{20:　<3}{21:　<3}{1}"
-    # printTitle = ("车次", "出发站", "到达站", "发车时间", "到达时间", "时长", "高软", "其他", "软卧",
-    #               "软座", "＊＊", "无座", "＊＊", "硬卧", "硬座", "二等", "一等", "商务", "动卧", "预定信息")
-    printTitleFormat = "{0:　<7}{1:　<7}{2:　<7}{3:　<7}{4:　<7}{5:　<7}{6:　<3}{7:　<3}{8:　<3}{9:　<3}" \
+def assemble_query_result(stationf, stationt, queryd=date.today(), seatFilter=None):
+    """
+    :param stationf:
+    :param stationt:
+    :param queryd:
+    :param seatFilter:
+    :return:
+    """
+    stationKey, stationValue = parse_station_code("GET", stationNameUrl, headers=initRequestHeaders, timeout=5)
+    stationCode = get_station_code(stationKey, stationValue, stationf, stationt)
+    try:
+        queryJson = query_ticket("GET", queryTicketUrl, stationCode, queryd, headers=initRequestHeaders, timeout=0.1)
+        queryStationCode, trafficInformations = parse_train_json(queryJson, seatFilter)
+        return echo_query_train(queryStationCode, trafficInformations)
+    except:
+        pass
+
+
+def echo_query_title():
+    echoTitleFormat = "{0:　<7}{1:　<7}{2:　<7}{3:　<7}{4:　<7}{5:　<7}{6:　<3}{7:　<3}{8:　<3}{9:　<3}" \
                         "{11:　<3}{13:　<3}{14:　<3}{15:　<3}{16:　<3}{17:　<3}{18:　<3}{19}"
-    printTrainFormat = "{2:　<7}{3:　<7}{4:　<7}{5:　<7}{6:　<7}{7:　<7}{9:　<3}{10:　<3}{11:　<3}{12:　<3}" \
-                       "{14:　<3}{16:　<3}{17:　<3}{18:　<3}{19:　<3}{20:　<3}{21:　<3}{1}"
-    printTitle = ("车次", "出发站", "到达站", "发车时间", "到达时间", "时长", "高软", "其他", "软卧",
-                  "软座", "＊＊", "无座", "＊＊", "硬卧", "硬座", "二等", "一等", "商务", "动卧", "预定信息")
-    print(printTitleFormat.format(*printTitle))
+    echoTitle = ("车次", "出发站", "到达站", "发车时间", "到达时间", "时长", "高软", "其他", "软卧",
+                 "软座", "＊＊", "无座", "＊＊", "硬卧", "硬座", "二等", "一等", "商务", "动卧", "预定信息")
+    return echoTitleFormat.format(*echoTitle)
+
+
+def echo_query_train(queryStationCode, trafficInformations):
+    echoTrainFormat = "{2:　<7}{3:　<7}{4:　<7}{5:　<7}{6:　<7}{7:　<7}{9:　<3}{10:　<3}{11:　<3}{12:　<3}" \
+                      "{14:　<3}{16:　<3}{17:　<3}{18:　<3}{19:　<3}{20:　<3}{21:　<3}{1}"
+    trainInformations = list()
     for train in trafficInformations:
-        print(printTrainFormat.format(*train))
-    print("\n\n")
+        trainInformations.append(echoTrainFormat.format(*train))
+    return trainInformations
 
 
 if __name__ == "__main__":
-    stationKey, stationValue = parse_station_code("GET", stationNameUrl, headers=initRequestHeaders)
-    stationCode = get_station_code(stationKey, stationValue, "杭州东", "义乌")
-    print(stationCode)
     i = 0
     interval = 0.1
     t = time.time()
@@ -203,11 +226,15 @@ if __name__ == "__main__":
     # while True:
     for _ in range(50):
         startTime = time.time()
-        queryJson = query_ticket("GET", queryTicketUrl, stationCode, nowDate, headers=initRequestHeaders, proxies={"http": "116.55.236.45"})
-        queryStationCode, trafficInformations = parse_train_json(queryJson)
-        i += 1
-        print(i, "正在查询：", queryStationCode)
-        print_query_train(queryStationCode, trafficInformations)
+        try:
+            i += 1
+            print(i, "正在查询：")
+            print(echo_query_title())
+            for train in assemble_query_result("hangzhou", "chongqing", queryd=date.today()):
+                print(train)
+            print("\n")
+        except:
+            pass
         endTime = time.time()
         s1 = (interval - (endTime - startTime))
         time.sleep(s1 if s1 > 0 else 0)
