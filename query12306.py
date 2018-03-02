@@ -10,36 +10,31 @@ import re
 import requests
 import json
 import time
-import random
 from datetime import date
+import login12306
 
 
 queryTicketUrl = "https://kyfw.12306.cn/otn/leftTicket/queryZ"  # 查询车票url,GET
 stationNameUrl = "https://kyfw.12306.cn/otn/resources/js/framework/station_name.js"  # 获取所有车站站名、电报码,GET
 stationTimeUrl = "https://kyfw.12306.cn/otn/resources/js/query/qss.js"  # 获取所有车站起售时间,GET
-"https://kyfw.12306.cn/otn/confirmPassenger/getPassengerDTOs"  # 获取帐号关联的联系人信息,GET
+contactInformationUrl = "https://kyfw.12306.cn/otn/confirmPassenger/getPassengerDTOs"  # 获取帐号关联的联系人信息,GET
 
 
 initRequestHeaders = {
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
-                    "Accept-Encoding": "gzip, deflate, br",
-                    "Accept-Language": "zh-CN,zh;q=0.9",
-                    "Cache-Control": "max-age=0",
-                    "Connection": "keep-alive",
-                    "Host": "kyfw.12306.cn",
-                    "Upgrade-Insecure-Requests": "1",
-                    "User-Agent": "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.132 Safari/537.36"
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Accept-Language": "zh-CN,zh;q=0.9",
+    "Cache-Control": "max-age=0",
+    "Connection": "keep-alive",
+    "Host": "kyfw.12306.cn",
+    "Upgrade-Insecure-Requests": "1",
+    "User-Agent":
+        "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.132 Safari/537.36"
 }
 
 
 queryTicketParams =\
     "leftTicketDTO.train_date={0}&leftTicketDTO.from_station={1}&leftTicketDTO.to_station={2}&purpose_codes=ADULT"
-
-
-class By12306query:
-
-    def __init__(self):
-        pass
 
 
 def create_network_request(method, url, **kwargs):
@@ -53,6 +48,15 @@ def create_network_request(method, url, **kwargs):
     session = requests.session()
     response = session.request(method, url, **kwargs)
     return response
+
+
+def get_user_information(method, url, **kwargs):
+    userInformationResponse = create_network_request(method, url, **kwargs)
+    userJson = userInformationResponse.text
+    print(userJson)
+    print(userJson["data"]["normal_passengers"])
+    userInformation = list()
+
 
 
 def parse_station_code(method, url, **kwargs):
@@ -125,13 +129,13 @@ def query_ticket(method, url, stationCode, date=date.today(), **kwargs):
     return queryJson
 
 
-def parse_train_json(jsonData, seatFilter=None):
+def parse_train_json(queryJson, seatFilter=None):
     """
     :param jsonData:
     :param seatFilter:
     :return:
     """
-    queryStationCode = jsonData["data"]["map"]
+    queryStationCode = queryJson["data"]["map"]
     compile = re.compile(r"\|")
     trafficInformations = list()
     for train in jsonData["data"]["result"]:
@@ -218,24 +222,34 @@ def echo_query_train(queryStationCode, trafficInformations):
     return trainInformations
 
 
-if __name__ == "__main__":
-    i = 0
-    interval = 0.1
-    t = time.time()
-    nowDate = date.today()
-    # while True:
-    for _ in range(50):
-        startTime = time.time()
-        try:
-            i += 1
-            print(i, "正在查询：")
-            print(echo_query_title())
-            for train in assemble_query_result("hangzhou", "chongqing", queryd=date.today()):
-                print(train)
-            print("\n")
-        except:
-            pass
-        endTime = time.time()
-        s1 = (interval - (endTime - startTime))
-        time.sleep(s1 if s1 > 0 else 0)
-    print("耗时：", time.time() - t, "s")
+# if __name__ == "__main__":
+#     i = 0
+#     interval = 0.1
+#     t = time.time()
+#     nowDate = date.today()
+#     # while True:
+#     for _ in range(50):
+#         startTime = time.time()
+#         try:
+#             i += 1
+#             print(i, "正在查询：")
+#             print(echo_query_title())
+#             for train in assemble_query_result("hangzhou", "chongqing", queryd=date.today()):
+#                 print(train)
+#             print("\n")
+#         except:
+#             pass
+#         endTime = time.time()
+#         s1 = (interval - (endTime - startTime))
+#         time.sleep(s1 if s1 > 0 else 0)
+#     print("耗时：", time.time() - t, "s")
+
+
+imgPosition, userCookies = login12306.load_login_img("GET", login12306.imgUrl, headers=login12306.imgRequestHeaders, timeout=10)
+print(userCookies)
+login12306.submit_login_img("POST", login12306.loginImgUrl, headers=login12306.loginRequestHeaders, params=imgPosition, cookies=userCookies)
+print(userCookies)
+loginResponseCode, userCookies = login12306.submit_login_user(
+    "POST", login12306.loginUserUrl, login12306.testUser[0], login12306.testUser[1], headers=login12306.loginRequestHeaders, cookies=userCookies)
+print(userCookies)
+get_user_information("GET", contactInformationUrl, headers=initRequestHeaders, cookies=userCookies)

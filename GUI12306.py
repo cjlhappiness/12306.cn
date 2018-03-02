@@ -6,9 +6,9 @@
 """
 
 
-from datetime import date
 import tkinter
-from query12306 import *
+from datetime import date
+import query12306
 
 
 train_content_l_list = []
@@ -18,9 +18,8 @@ gtop.geometry('1100x400+100+100')
 
 
 def start():
-
     glist.delete(1, tkinter.END)
-    trafficInformations = assemble_query_result(gtkf.get(), gtkt.get(), gtkd.get(), seatFilter=range(13))
+    trafficInformations = query12306.assemble_query_result(gtkf.get(), gtkt.get(), gtkd.get(), seatFilter=range(13))
     for x in range(len(trafficInformations)):
         trafficInformation = trafficInformations[x]
         glist.insert(x + 1, trafficInformation)
@@ -39,6 +38,6 @@ gbtn = tkinter.Button(gtop, text="开始", command=start)
 gbtn.pack()
 glist = tkinter.Listbox(gtop, width=150, height=150)
 glist.pack()
-glist.insert(0, echo_query_title())
+glist.insert(0, query12306.echo_query_title())
 
 gtop.mainloop()
