@@ -11,7 +11,6 @@
 
 
 import re
-import copy
 import requests
 from io import BytesIO
 from PIL import Image
@@ -20,11 +19,13 @@ from PIL import Image
 baseUrl = "https://kyfw.12306.cn/otn/login/init"  # 登录界面url，GET
 imgUrl = "https://kyfw.12306.cn/passport/captcha/captcha-image?login_site=E&module=login&rand=sjrand"  # 验证码图片url,GET
 loginImgUrl = "https://kyfw.12306.cn/passport/captcha/captcha-check"  # 提交图片登录url,POST
-loginUserUrl = "https://kyfw.12306.cn/passport/web/login"  # 提交登录url,POST
 otherCookiesParamsUrl = "https://kyfw.12306.cn/otn/HttpZF/logdevice"  # cookies必须的参数可在此url获取,GET
-againLoginUserUrl = "https://kyfw.12306.cn/passport/web/auth/uamtk"  # 再次验证登录，以更新cookies
-
-
+loginUerUrl = ("https://kyfw.12306.cn/passport/web/login",  # 提交登录url,POST
+               "https://kyfw.12306.cn/otn/login/userLogin",  # 1次验证登录,POST
+               "https://kyfw.12306.cn/otn/passport?redirect=/otn/login/userLogin",  # 2次验证登录,GET
+               "https://kyfw.12306.cn/passport/web/auth/uamtk",  # 3次验证登录,POST
+               "https://kyfw.12306.cn/otn/uamauthclient"  # 4次验证登录,POST
+               )
 imgRequestHeaders = {
     "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
     "Accept-Encoding": "gzip, deflate, br",
@@ -51,10 +52,17 @@ loginRequestHeaders = {
 }
 
 imgRequestParams = "answer={0}&login_site=E&rand=sjrand"
-userRequestParams = "username={0}&password={1}&appid=otn"
+loginUserParams = (
+    "username={0}&password={1}&appid=otn",
+    "_json_att=",
+    "redirect=/otn/login/userLogin",
+    "appid=otn",
+    "tk={0}"
+)
 imgLocation = ["null", "30,45", "105,45", "180,45", "250,45", "30,120", "105,120", "180,120", "250,120"]
-testUser = ["1287513006@qq.com", "lp950125"]
-test1User = ["570604900@qq.com", "lyj950422"]
+test1User = ["1287513006@qq.com", "lp950125"]
+testUser = ["570604900@qq.com", "lyj950422"]
+
 
 _RESULT_OK = 1
 _RESULT_FAIL = -1
@@ -114,20 +122,30 @@ def submit_login_img(method, url, **kwargs):
         return _RESULT_FAIL
 
 
-def submit_login_user(method, url, userName, password, **kwargs):
+def submit_login_user(method, urls, loginUserParams, userName, password, **kwargs):
     """
-    登录用户
     :param method:
-    :param url:
+    :param urls:
+    :param loginUserParams:
     :param userName:
     :param password:
     :param kwargs:
     :return:
     """
-    kwargs["params"] = userRequestParams.format(userName, password)
-    loginResponse = create_network_request(method, url, **kwargs)
+    kwargs["params"] = loginUserParams[0].format(userName, password)
+    loginResponse = create_network_request(method, urls[0], **kwargs)
     requestCookies = kwargs["cookies"]
     requestCookies.update(loginResponse.cookies)
+    firstLogin = create_network_request("POST", urls[1], headers=loginRequestHeaders, cookies=userCookies,
+                                        params=loginUserParams[1])
+    secondLogin = create_network_request("GET", urls[2], headers=loginRequestHeaders, cookies=userCookies,
+                                         params=loginUserParams[2])
+    userCookies.update(secondLogin.cookies)
+    thirdLogin = create_network_request("POST", urls[3], headers=imgRequestHeaders, cookies=userCookies,
+                                        params=loginUserParams[3]).json()
+    userCookies["tk"] = thirdLogin["newapptk"]
+    fourthlogin = create_network_request("POST", urls[4], headers=loginRequestHeaders, cookies=userCookies,
+                                         params=loginUserParams[4].format(thirdLogin["newapptk"]))
     if int(eval(loginResponse.text)["result_code"]) == 0:
         print("用户登录成功！")
         return _RESULT_OK, requestCookies
@@ -138,44 +156,10 @@ def submit_login_user(method, url, userName, password, **kwargs):
 
 if __name__ == "__main__":
     otherParamsCookies = get_other_cookies_params("GET", otherCookiesParamsUrl, headers=imgRequestHeaders)
-    print(otherParamsCookies)
     initCookies = create_network_request("GET", baseUrl, headers=imgRequestHeaders, timeout=10).cookies
-    print(initCookies)
     imgPosition, userCookies = load_login_img("GET", imgUrl, headers=imgRequestHeaders, timeout=10)
     userCookies.update(initCookies)
     userCookies.update(otherParamsCookies)
-    print(userCookies)
     submit_login_img("POST", loginImgUrl, headers=loginRequestHeaders, params=imgPosition, cookies=userCookies)
-
-    loginResponseCode, userCookies = submit_login_user(
-        "POST", loginUserUrl, testUser[0], testUser[1], headers=loginRequestHeaders, cookies=userCookies)
-    # print(userCookies.items())
-    create_network_request("POST", "https://kyfw.12306.cn/otn/login/userLogin", headers=loginRequestHeaders, cookies=userCookies, params={"_json_att": ""})
-    create_network_request("GET", "https://kyfw.12306.cn/otn/passport?redirect=/otn/login/userLogin", headers=loginRequestHeaders, cookies=userCookies, params={"redirect": "/otn/login/userLogin"})
-    aga = create_network_request("POST", againLoginUserUrl, headers=imgRequestHeaders, cookies=userCookies, params={"appid": "otn"}).json()
-    del userCookies["uamtk"]
-    # print(aga)
-    userCookies["tk"] = aga["newapptk"]
-    aga1 = create_network_request("POST", "https://kyfw.12306.cn/otn/uamauthclient", headers=loginRequestHeaders, cookies=userCookies, params={"tk": aga["newapptk"]}).json()
-    # print(aga1)
-    print(userCookies)
-    create_network_request("GET", "https://kyfw.12306.cn/otn/login/userLogin", headers=loginRequestHeaders, cookies=userCookies)
-    a = create_network_request("GET", "https://kyfw.12306.cn/otn/index/initMy12306", headers=loginRequestHeaders, cookies=userCookies)
-    #b = create_network_request("GET", "https://kyfw.12306.cn/otn/modifyUser/initQueryUserInfo", headers=loginRequestHeaders, cookies=userCookies)
-    #c = create_network_request("POST", "https://kyfw.12306.cn/otn/passengers/init", headers=loginRequestHeaders, params={"_json_att:":""},cookies=userCookies)
-
-    d = {"JSESSIONID" :"6559E67298D77A5C1457F4EC2638806C",
-    "tk":"bxFGVyp84bP9Zx2qMg-UnH_wQRBW45OidoZwjvB3Ll8JZ_Qkaf5250",
-    "route":"c5c62a339e7744272a54643b3be5bf64",
-    "BIGipServerotn":"720372234.38945.0000",
-    "BIGipServerpool_passport":"267190794.50215.0000",
-    "RAIL_EXPIRATION":"1520301756750",
-    "RAIL_DEVICEID":"U0uyifr53zs4ttBHubMTRlS11YnWXSYbUouFwlUKS1K1RTYBq6zCekEOryvJFfB5WfwC5fmg1b96wSJjUFTC6qBS_-Z8faKmLkewW1ueIe4mgGL5NWAE2qjfFw2zWBMCIdE_Sw3QJcLhN-0iXfz-Af5DdJwBiVWb"}
-
-    print(create_network_request("GET", "https://kyfw.12306.cn/otn/confirmPassenger/getPassengerDTOs", headers=loginRequestHeaders, cookies=userCookies).json())
-    # print("\n\n\n")
-    # a = create_network_request("GET", "https://kyfw.12306.cn/otn/index/initMy12306", headers=loginRequestHeaders, cookies=userCookies)
-    #b = create_network_request("GET", "https://kyfw.12306.cn/otn/modifyUser/initQueryUserInfo", headers=loginRequestHeaders, cookies=userCookies)
-    #c = create_network_request("POST", "https://kyfw.12306.cn/otn/passengers/init", headers=loginRequestHeaders, params={"_json_att:":""},cookies=userCookies)
-    #
-    # print("--", a.text)
+    loginResponseCode, userCookies = submit_login_user("POST", loginUerUrl, loginUserParams, testUser[0], testUser[1],
+                                                       headers=loginRequestHeaders, cookies=userCookies)
