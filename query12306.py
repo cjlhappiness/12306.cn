@@ -2,14 +2,14 @@
 
 
 """
-pass
+    查询各种数据
+
 """
 
 
 import re
 import requests
 import json
-import time
 from datetime import date
 import login12306
 
@@ -18,7 +18,6 @@ queryTicketUrl = "https://kyfw.12306.cn/otn/leftTicket/queryZ"  # 查询车票ur
 stationNameUrl = "https://kyfw.12306.cn/otn/resources/js/framework/station_name.js"  # 获取所有车站站名、电报码,GET
 stationTimeUrl = "https://kyfw.12306.cn/otn/resources/js/query/qss.js"  # 获取所有车站起售时间,GET
 contactInformationUrl = "https://kyfw.12306.cn/otn/confirmPassenger/getPassengerDTOs"  # 获取帐号关联的联系人信息,GET
-
 
 initRequestHeaders = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
@@ -32,42 +31,58 @@ initRequestHeaders = {
         "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.132 Safari/537.36"
 }
 
-
-queryTicketParams =\
-    "leftTicketDTO.train_date={0}&leftTicketDTO.from_station={1}&leftTicketDTO.to_station={2}&purpose_codes=ADULT"
+queryTicketParams = "leftTicketDTO.train_date={0}&leftTicketDTO.from_station={1}&leftTicketDTO.to_station={2}&purpose_codes=ADULT"
 
 
-def create_network_request(method, url, **kwargs):
+def create_network_request(session, method, url, **kwargs):
     """
     通用的网络请求函数
+    :param session:
     :param method:
     :param url:
     :param kwargs:
     :return:
     """
-    session = requests.session()
-    response = session.request(method, url, **kwargs)
-    return response
+    if not session:
+        session = requests.session()
+    try:
+        response = session.request(method, url, **kwargs)
+    except requests.exceptions.SSLError:
+        response = session.request(method, url, verify=False, **kwargs)
+    return session, response
 
 
-def get_user_information(method, url, **kwargs):
-    userInformationResponse = create_network_request(method, url, **kwargs)
-    userJson = userInformationResponse.text
-    print(userJson)
-    print(userJson["data"]["normal_passengers"])
-    userInformation = list()
-
+def get_contact_information(session, method, url, **kwargs):
+    """
+    获取账号下的所有联系人信息，需要session
+    :param session:
+    :param method:
+    :param url:
+    :param kwargs:
+    :return:
+    """
+    contactInformationDict = dict()
+    contactInformationResponse = create_network_request(session, method, url, **kwargs)[1]
+    contactInformationJson = contactInformationResponse.json()
+    for contactInformation in contactInformationJson["data"]["normal_passengers"]:
+        passenger_name = contactInformation.get("passenger_name")
+        sex_name = contactInformation.get("sex_name")
+        passenger_id_type_name = contactInformation.get("passenger_id_type_name")
+        passenger_id_no = contactInformation.get("passenger_id_no")
+        contactInformationList = [sex_name, passenger_id_type_name, passenger_id_no]
+        contactInformationDict[passenger_name] = contactInformationList
+    return contactInformationDict
 
 
 def parse_station_code(method, url, **kwargs):
     """
-    解析所有车站代码
+    解析所有车站代码，无需session
     :param method:
     :param url:
     :param kwargs:
     :return:
     """
-    stationResponse = create_network_request(method, url, **kwargs)
+    stationResponse = create_network_request(None, method, url, **kwargs)
     stationKey= list()
     stationValue = list()
     l1 = list()
@@ -101,12 +116,12 @@ def get_station_code(stationKey, stationValue, *stationName):
             index = stationKey.index(i) % length
             stationCode.append(stationValue[index])
     except ValueError:
-        # print("ValueError: {0} is not in list".format(str(i)))
+        print("ValueError: {0} is not in list".format(str(i)))
         return
     return stationCode
 
 
-def query_ticket(method, url, stationCode, date=date.today(), **kwargs):
+def query_ticket(session, method, url, stationCode, date=date.today(), **kwargs):
     """
     查询车票
     :param method:
@@ -119,7 +134,7 @@ def query_ticket(method, url, stationCode, date=date.today(), **kwargs):
     queryJson = None
     while not queryJson:
         kwargs["params"] = queryTicketParams.format(date, *stationCode)
-        queryResponse = create_network_request(method, url, **kwargs)
+        queryResponse = create_network_request(session, method, url, **kwargs)
         try:
             queryJson = queryResponse.json()
         except json.decoder.JSONDecodeError as e:
@@ -222,7 +237,14 @@ def echo_query_train(queryStationCode, trafficInformations):
     return trainInformations
 
 
-# if __name__ == "__main__":
+def commmit_train_ticket():
+
+    pass
+
+
+if __name__ == "__main__":
+    userSession = login12306.get_login_user("570604900@qq.com", "lyj950422")
+    get_contact_information(userSession, "POST", contactInformationUrl, headers=initRequestHeaders)
 #     i = 0
 #     interval = 0.1
 #     t = time.time()
@@ -244,12 +266,3 @@ def echo_query_train(queryStationCode, trafficInformations):
 #         time.sleep(s1 if s1 > 0 else 0)
 #     print("耗时：", time.time() - t, "s")
 
-
-imgPosition, userCookies = login12306.load_login_img("GET", login12306.imgUrl, headers=login12306.imgRequestHeaders, timeout=10)
-print(userCookies)
-login12306.submit_login_img("POST", login12306.loginImgUrl, headers=login12306.loginRequestHeaders, params=imgPosition, cookies=userCookies)
-print(userCookies)
-loginResponseCode, userCookies = login12306.submit_login_user(
-    "POST", login12306.loginUserUrl, login12306.testUser[0], login12306.testUser[1], headers=login12306.loginRequestHeaders, cookies=userCookies)
-print(userCookies)
-get_user_information("GET", contactInformationUrl, headers=initRequestHeaders, cookies=userCookies)
