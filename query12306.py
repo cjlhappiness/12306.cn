@@ -9,6 +9,7 @@
 
 import re
 import json
+import time
 from datetime import date
 import public12306
 import login12306
@@ -70,7 +71,7 @@ def parse_station_code(method, url, **kwargs):
     :param kwargs:
     :return:
     """
-    stationResponse = public12306.create_network_request(None, method, url, **kwargs)
+    stationResponse = public12306.create_network_request(None, method, url, **kwargs)[1]
     stationKey= list()
     stationValue = list()
     l1 = list()
@@ -109,9 +110,9 @@ def get_station_code(stationKey, stationValue, *stationName):
     return stationCode
 
 
-def query_ticket(session, method, url, stationCode, date=date.today(), **kwargs):
+def query_ticket(method, url, stationCode, date=date.today(), **kwargs):
     """
-    查询车票
+    查询车票，无需session
     :param method:
     :param url:
     :param stationCode:
@@ -122,7 +123,7 @@ def query_ticket(session, method, url, stationCode, date=date.today(), **kwargs)
     queryJson = None
     while not queryJson:
         kwargs["params"] = queryTicketParams.format(date, *stationCode)
-        queryResponse = public12306.create_network_request(session, method, url, **kwargs)
+        queryResponse = public12306.create_network_request(None, method, url, **kwargs)[1]
         try:
             queryJson = queryResponse.json()
         except json.decoder.JSONDecodeError as e:
@@ -141,7 +142,7 @@ def parse_train_json(queryJson, seatFilter=None):
     queryStationCode = queryJson["data"]["map"]
     compile = re.compile(r"\|")
     trafficInformations = list()
-    for train in jsonData["data"]["result"]:
+    for train in queryJson["data"]["result"]:
         trainNo = re.split(compile, train)
         trafficInformation = list()  # 长度22
         trafficInformation.extend(trainNo[:1])  # 令牌，1
@@ -198,14 +199,11 @@ def assemble_query_result(stationf, stationt, queryd=date.today(), seatFilter=No
     :param seatFilter:
     :return:
     """
-    stationKey, stationValue = parse_station_code("GET", stationNameUrl, headers=initRequestHeaders, timeout=5)
+    stationKey, stationValue = parse_station_code(*stationNameUrl, headers=initRequestHeaders, timeout=5)
     stationCode = get_station_code(stationKey, stationValue, stationf, stationt)
-    try:
-        queryJson = query_ticket("GET", queryTicketUrl, stationCode, queryd, headers=initRequestHeaders, timeout=0.1)
-        queryStationCode, trafficInformations = parse_train_json(queryJson, seatFilter)
-        return echo_query_train(queryStationCode, trafficInformations)
-    except:
-        pass
+    queryJson = query_ticket(*queryTicketUrl, stationCode, queryd, headers=initRequestHeaders, timeout=0.1)
+    queryStationCode, trafficInformations = parse_train_json(queryJson, seatFilter)
+    return echo_query_train(queryStationCode, trafficInformations)
 
 
 def echo_query_title():
@@ -226,27 +224,24 @@ def echo_query_train(queryStationCode, trafficInformations):
 
 
 if __name__ == "__main__":
-    userSession = login12306.get_login_user("570604900@qq.com", "lyj950422")
-    public12306.open_webdriver(userSession)
-    # get_contact_information(userSession, "POST", contactInformationUrl, headers=initRequestHeaders)
-#     i = 0
-#     interval = 0.1
-#     t = time.time()
-#     nowDate = date.today()
-#     # while True:
-#     for _ in range(50):
-#         startTime = time.time()
-#         try:
-#             i += 1
-#             print(i, "正在查询：")
-#             print(echo_query_title())
-#             for train in assemble_query_result("hangzhou", "chongqing", queryd=date.today()):
-#                 print(train)
-#             print("\n")
-#         except:
-#             pass
-#         endTime = time.time()
-#         s1 = (interval - (endTime - startTime))
-#         time.sleep(s1 if s1 > 0 else 0)
-#     print("耗时：", time.time() - t, "s")
+    i = 0
+    interval = 0.1
+    t = time.time()
+    nowDate = date.today()
+    # while True:
+    for _ in range(50):
+        startTime = time.time()
+        try:
+            i += 1
+            print(i, "正在查询：")
+            print(echo_query_title())
+            for train in assemble_query_result("hangzhou", "chongqing", queryd=date.today()):
+                print(train)
+            print("\n")
+        except:
+            pass
+        endTime = time.time()
+        s1 = (interval - (endTime - startTime))
+        time.sleep(s1 if s1 > 0 else 0)
+    print("耗时：", time.time() - t, "s")
 

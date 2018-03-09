@@ -49,6 +49,7 @@ loginUerUrls = (
     ("POST", "https://kyfw.12306.cn/passport/web/auth/uamtk"),  # 3次验证登录,POST
     ("POST", "https://kyfw.12306.cn/otn/uamauthclient"),  # 4次验证登录,POST
 )
+loginOutUrl = ("GET", "https://kyfw.12306.cn/otn/login/loginOut")
 
 imgRequestParams = "answer={0}&login_site=E&rand=sjrand"
 loginUserParams = (
@@ -73,9 +74,12 @@ def get_other_cookies(session, method, url, **kwargs):
     :return:
     """
     otherSession, otherResponse = public12306.create_network_request(session, method, url, **kwargs)
-    otherCookiesDict = eval(re.search(r"{.*?exp.*?dfp.*?}", otherResponse.text).group())
-    otherCookiesDict = {"RAIL_EXPIRATION": otherCookiesDict["exp"], "RAIL_DEVICEID": otherCookiesDict["dfp"]}
-    otherSession.cookies.update(otherCookiesDict)
+    try:
+        otherCookiesJson = json.loads(re.search(r"{.*?exp.*?dfp.*?}", otherResponse.text).group())
+        otherCookiesDict = {"RAIL_EXPIRATION": otherCookiesJson["exp"], "RAIL_DEVICEID": otherCookiesJson["dfp"]}
+        otherSession.cookies.update(otherCookiesDict)
+    except AttributeError:
+        return get_other_cookies(session, method, url, **kwargs)
     return otherSession
 
 
@@ -148,13 +152,16 @@ def submit_login_user(session, methodAndUrls, loginUserParams, userName, passwor
         return loginSession, stateCode[0]
 
 
-def get_login_user(userName, password):
+def get_login_user(userName=None, password=None):
     """
     获取登录的用户session
     :param userName:
     :param password:
     :return:
     """
+    if not (userName & password):
+        userName = input("输入用户帐号：")
+        password = input("输入用户密码：")
     otherSession = get_other_cookies(None, *otherCookiesParamsUrl, headers=initRequestHeaders)
     initSession = public12306.create_network_request(otherSession, *baseUrl, headers=initRequestHeaders)[0]
     userSession, imgPosition = load_login_img(initSession, *imgUrl, headers=initRequestHeaders)
@@ -165,8 +172,10 @@ def get_login_user(userName, password):
     return userSession
 
 
+def login_out_user(session):
+    public12306.create_network_request(session, *loginOutUrl)
+
+
 if __name__ == "__main__":
-    userName = input("输入用户帐号：")
-    password = input("输入用户密码：")
-    userSession = get_login_user(userName, password)
-    print(userSession.cookies)
+    userSession = get_login_user()
+    public12306.open_webdriver(userSession)
